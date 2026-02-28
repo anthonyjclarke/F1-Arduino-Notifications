@@ -1,20 +1,36 @@
 /*******************************************************************
-    An Arduino Project for notifiying you of the start time of
-    upcoming F1 sessions in your local timezone.
+    F1 Arduino Notifications
 
-    Tested on an ESP32.
+    Displays upcoming F1 session times in your local timezone on
+    either a Cheap Yellow Display (CYD / ILI9341 TFT) or an
+    ESP32 Trinity HUB75 LED matrix panel.
 
-    If you find what I do useful and would like to support me,
-    please consider becoming a sponsor on Github
+    Original work by Brian Lough (witnessmenow)
+    https://github.com/witnessmenow/arduino-f1-notifications
+    YouTube: https://www.youtube.com/brianlough
+
+    If you find the original work useful, consider sponsoring:
     https://github.com/sponsors/witnessmenow/
 
-    Written by Brian Lough
-    YouTube: https://www.youtube.com/brianlough
-    Twitter: https://twitter.com/witnessmenow
+    Tested on ESP32 (esp32dev).
+
+    --- Changes from original ---
+    - Dual display support via F1Display polymorphic base class
+      (CYD ILI9341 TFT and HUB75 64x64 LED matrix)
+    - WiFiManager captive portal for timezone and Telegram
+      configuration, persisted to SPIFFS as JSON
+    - Double-reset-to-config-portal (ESP_DoubleResetDetector)
+    - Circuit track image fetched from Imgur, cached to SPIFFS
+    - Race week detection: switches between circuit image and
+      full session timetable N days before the GP
+    - Leveled debug logging (DBG_ERROR / WARN / INFO / VERBOSE)
+    - Formatted serial output table for race schedule
+    - Telegram notification rescheduled on send failure
+    - Fixed PNG rendering byte order for TFT_eSPI (RGB565 big-endian)
  *******************************************************************/
 // ----------------------------
 // Display type
-// ---------------------------
+// ----------------------------
 
 // This project currently supports the following displays
 // (Uncomment the required #define)
@@ -36,10 +52,68 @@
 
 #define ESP_DRD_USE_SPIFFS true
 
+// =========================
+// Debug System
+// =========================
+/**
+ * Leveled debug logging system with runtime control
+ *
+ * DEBUG LEVELS:
+ *   0 = Off      - No debug output
+ *   1 = Error    - Critical errors only
+ *   2 = Warn     - Warnings + Errors
+ *   3 = Info     - General info + Warnings + Errors (default)
+ *   4 = Verbose  - All debug output including frequent events
+ *
+ * USAGE:
+ *   DBG_ERROR(...)   - Critical errors (level 1+)
+ *   DBG_WARN(...)    - Warnings (level 2+)
+ *   DBG_INFO(...)    - General information (level 3+)
+ *   DBG_VERBOSE(...) - Verbose/frequent output (level 4)
+ *
+ * RUNTIME CONTROL:
+ *   Set debugLevel variable (0-4) to change verbosity at runtime
+ *   Can be controlled via web API
+ */
+#ifndef DEBUG_LEVEL
+#define DEBUG_LEVEL 3 // Default: Info level
+#endif
+
+#define DBG_LEVEL_OFF 0
+#define DBG_LEVEL_ERROR 1
+#define DBG_LEVEL_WARN 2
+#define DBG_LEVEL_INFO 3
+#define DBG_LEVEL_VERBOSE 4
+
+// Runtime debug level control (can be changed via web API)
+static uint8_t debugLevel = DEBUG_LEVEL;
+
+void debugLogf(uint8_t level, const char *label, const char *fmt, ...)
+{
+  if (debugLevel < level)
+  {
+    return;
+  }
+
+  char logMessage[256];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(logMessage, sizeof(logMessage), fmt, args);
+  va_end(args);
+
+  Serial.printf("[%s] %s\n", label, logMessage);
+}
+
+#define DBG_ERROR(...) debugLogf(DBG_LEVEL_ERROR, "ERROR", __VA_ARGS__)
+#define DBG_WARN(...) debugLogf(DBG_LEVEL_WARN, "WARN", __VA_ARGS__)
+#define DBG_INFO(...) debugLogf(DBG_LEVEL_INFO, "INFO", __VA_ARGS__)
+#define DBG_VERBOSE(...) debugLogf(DBG_LEVEL_VERBOSE, "VERBOSE", __VA_ARGS__)
+
 // ----------------------------
 // Standard Libraries
 // ----------------------------
 
+#include <stdarg.h>
 #include <WiFi.h>
 
 #include <WiFiClientSecure.h>
@@ -134,80 +208,74 @@ void setup()
   // put your setup code here, to run once:
 
   Serial.begin(115200);
+  DBG_INFO("Boot started");
+  DBG_INFO("Debug level set to %u", debugLevel);
 
   f1Display->displaySetup();
+  DBG_INFO("Display setup complete");
 
   bool forceConfig = false;
 
   drd = new DoubleResetDetector(DRD_TIMEOUT, DRD_ADDRESS);
   if (drd->detectDoubleReset())
   {
-    Serial.println(F("Forcing config mode as there was a Double reset detected"));
+    DBG_WARN("Forcing config mode due to double reset");
     forceConfig = true;
   }
 
-  // Initialise SPIFFS, if this fails try .begin(true)
-  // NOTE: I believe this formats it though it will erase everything on
-  // spiffs already! In this example that is not a problem.
-  // I have found once I used the true flag once, I could use it
-  // without the true flag after that.
+  // Try mounting without format first to preserve persisted data.
+  // Falls back to formatting on first boot or after corruption.
   bool spiffsInitSuccess = SPIFFS.begin(false) || SPIFFS.begin(true);
   if (!spiffsInitSuccess)
   {
-    Serial.println("SPIFFS initialisation failed!");
+    DBG_ERROR("SPIFFS initialization failed");
     while (1)
-      yield(); // Stay here twiddling thumbs waiting
+      yield();
   }
-  Serial.println("\r\nInitialisation done.");
+  DBG_INFO("SPIFFS initialization done");
 
   if (!f1Config.fetchConfigFile())
   {
     // Failed to fetch config file, need to launch Wifi Manager
+    DBG_WARN("Config file load failed, forcing WiFiManager config portal");
     forceConfig = true;
   }
 
   setupWiFiManager(forceConfig, f1Config, f1Display);
+  DBG_INFO("WiFiManager setup complete");
   raceLogicSetup(f1Config);
   bot.updateToken(f1Config.botToken);
-
-  // Set WiFi to station mode and disconnect from an AP if it was Previously
-  // connected
-  // WiFi.mode(WIFI_STA);
-  // WiFi.begin(ssid, password);
+  DBG_INFO("Race logic initialized");
 
   while (WiFi.status() != WL_CONNECTED)
   {
-    Serial.print(".");
+    DBG_VERBOSE("Waiting for WiFi connection...");
     delay(500);
   }
 
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  DBG_INFO("WiFi connected");
+  DBG_INFO("IP address: %s", WiFi.localIP().toString().c_str());
 
   secured_client.setCACert(github_server_cert);
+  DBG_INFO("Fetching races.json from remote source");
   while (fetchRaceJson(fileFetcher) != 1)
   {
-    Serial.println("failed to get Race Json");
-    Serial.println("will try again in 10 seconds");
+    DBG_WARN("Failed to fetch races.json, retrying in 10 seconds");
     delay(1000 * 10);
   }
 
-  Serial.println("Fetched races.json File");
+  DBG_INFO("Fetched races.json successfully");
 
-  Serial.println("Waiting for time sync");
+  DBG_INFO("Waiting for time sync");
 
   waitForSync();
 
-  Serial.println();
-  Serial.println("UTC:             " + UTC.dateTime());
+  DBG_INFO("Time sync complete");
+  DBG_INFO("UTC: %s", UTC.dateTime().c_str());
 
   myTZ.setLocation(f1Config.timeZone);
-  Serial.print(f1Config.timeZone);
-  Serial.print(F(":     "));
-  Serial.println(myTZ.dateTime());
-  Serial.println("-------------------------");
+  DBG_INFO("%s: %s", f1Config.timeZone.c_str(), myTZ.dateTime().c_str());
+  DBG_INFO("Setup complete");
 
   // sendNotificationOfNextRace(&bot, f1Config.roundOffset);
 }
@@ -220,24 +288,25 @@ void sendNotification()
   if (f1Config.isTelegramConfigured())
   {
     secured_client.setCACert(TELEGRAM_CERTIFICATE_ROOT);
-    Serial.println("Sending notifcation");
+    DBG_INFO("Sending Telegram notification");
     f1Config.currentRaceNotification = sendNotificationOfNextRace(&bot);
     if (!f1Config.currentRaceNotification)
     {
       // Notificaiton failed, raise event again
-      Serial.println("Notfication failed");
+      DBG_WARN("Notification failed, event will be rescheduled");
       setEvent(sendNotification, getNotifyTime());
     }
     else
     {
       notificaitonEventRaised = false;
+      DBG_INFO("Notification sent successfully");
       f1Config.saveConfigFile();
     }
   }
   else
   {
 
-    Serial.println("Would have sent Notification now, but telegram is not configured");
+    DBG_WARN("Notification skipped, Telegram is not configured");
 
     notificaitonEventRaised = false;
     f1Config.currentRaceNotification = true;
@@ -257,10 +326,10 @@ void loop()
   if (minuteCounter >= 60)
   {
     secured_client.setCACert(github_server_cert);
+    DBG_INFO("Refreshing races.json");
     while (fetchRaceJson(fileFetcher) != 1)
     {
-      Serial.println("failed to get Race Json");
-      Serial.println("will try again in 10 seconds");
+      DBG_WARN("Failed to refresh races.json, retrying in 10 seconds");
       delay(1000 * 10);
     }
     minuteCounter = 0;
@@ -279,8 +348,7 @@ void loop()
       // we have never notified about this race yet, so we'll raise an event
       setEvent(sendNotification, getNotifyTime());
       notificaitonEventRaised = true;
-      Serial.print("Raised event for: ");
-      Serial.println(myTZ.dateTime(getNotifyTime(), UTC_TIME, f1Config.timeFormat));
+      DBG_INFO("Notification event raised for: %s", myTZ.dateTime(getNotifyTime(), UTC_TIME, f1Config.timeFormat).c_str());
     }
     first = false;
   }

@@ -1,7 +1,11 @@
+// ----------------------------
+// getImage.h
+// Downloads circuit track images from Imgur and caches them to SPIFFS.
+// ----------------------------
+
 #include <FileFetcher.h>
 
-// i.imgur.com
-// USERTrust RSA Certification Authority
+// Root CA for i.imgur.com (USERTrust RSA Certification Authority)
 
 const char IMGUR_CERTIFICATE_ROOT[] = R"=EOF=(
 -----BEGIN CERTIFICATE-----
@@ -152,25 +156,23 @@ int getImage(const char *raceName)
 
   const char *imageUrl = getImageUrlForRace(raceName);
 
-  // In this example I reuse the same filename
-  // over and over
   if (SPIFFS.exists(TRACK_IMAGE) == true)
   {
-    Serial.println("Removing existing image");
+    DBG_VERBOSE("Removing existing track image");
     SPIFFS.remove(TRACK_IMAGE);
   }
 
   fs::File f = SPIFFS.open(TRACK_IMAGE, "w+");
   if (!f)
   {
-    Serial.println("file open failed");
+    DBG_ERROR("Opening track image file for write failed");
     return -1;
   }
 
   secured_client.setCACert(IMGUR_CERTIFICATE_ROOT);
+  DBG_INFO("Downloading track image for race: %s", raceName);
   bool gotImage = fileFetcher.getFile((char *)imageUrl, &f);
 
-  // Make sure to close the file!
   f.close();
 
   return gotImage;

@@ -1,4 +1,9 @@
 
+// ----------------------------
+// display.h
+// Abstract F1Display base class — defines the interface for all display types.
+// ----------------------------
+
 #ifndef F1DISPLAY_H
 #define F1DISPLAY_H
 
@@ -13,7 +18,7 @@ class F1Display {
   public:
     virtual void displaySetup() = 0;
 
-    // For when its more than a week before race day
+    // Shows circuit image; called when it's more than DaysBeforeRace days out
     virtual void displayPlaceHolder(const char* raceName, JsonObject races_sessions) = 0;
     virtual void displayRaceWeek(const char* raceName, JsonObject races_sessions) = 0;
     virtual void drawWifiManagerMessage(WiFiManager *myWiFiManager) = 0;

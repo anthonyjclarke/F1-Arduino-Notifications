@@ -1,3 +1,8 @@
+// ----------------------------
+// raceLogic.h
+// Race schedule fetch, session parsing, display routing, and Telegram dispatch.
+// ----------------------------
+
 #ifndef RACELOGIC_H
 #define RACELOGIC_H
 
@@ -5,7 +10,7 @@
 #define CURRENT_RACE_FILE_NAME "/current_races.json"
 
 // path to the races schedule, needs to be updated each year
-#define RACE_JSON_URL "https://raw.githubusercontent.com/sportstimes/f1/main/_db/f1/2025.json"
+#define RACE_JSON_URL "https://raw.githubusercontent.com/sportstimes/f1/main/_db/f1/2026.json"
 // Number of days before the race to display circuit image rather than sessions schedule
 #define DaysBeforeRace 3
 
@@ -58,9 +63,7 @@ void printConvertedTime(const char *sessionName, const char *sessionStartTime)
 {
 
   String timeStr = getConvertedTime(sessionStartTime, "");
-  Serial.print(sessionName);
-  Serial.print(": ");
-  Serial.println(timeStr);
+  DBG_INFO("%s: %s", sessionName, timeStr.c_str());
 }
 
 const char *sessionCodeToString(const char *sessionCode)
@@ -97,16 +100,47 @@ const char *sessionCodeToString(const char *sessionCode)
   return "UNKNOWN";
 }
 
+// Full display names for box output, max 17 chars to fit session column
+const char *sessionCodeToFullString(const char *sessionCode)
+{
+  if (strcmp(sessionCode, "fp1") == 0)            return "Free Practice 1";
+  if (strcmp(sessionCode, "fp2") == 0)            return "Free Practice 2";
+  if (strcmp(sessionCode, "fp3") == 0)            return "Free Practice 3";
+  if (strcmp(sessionCode, "qualifying") == 0)     return "Qualifying";
+  if (strcmp(sessionCode, "sprint") == 0)         return "Sprint";
+  if (strcmp(sessionCode, "sprintQualifying") == 0) return "Sprint Qualifying";
+  if (strcmp(sessionCode, "gp") == 0)             return "Race";
+  return "Unknown";
+}
+
 void printRaceTimes(const char *raceName, JsonObject races_sessions)
 {
-  Serial.print("Next Race: ");
-  Serial.println(raceName);
+  if (debugLevel < DBG_LEVEL_INFO) return;
+
+  // Box: 41 chars wide (39 inner)
+  // Columns (inner widths): Session=21, Day=8, Time=8
+  // "Sprint Qualifying" (17 chars) is the longest session name: 2+17+2 = 21 col ✓
+  String nowStr = myTZ.dateTime("Y-m-d D H:i");
+
+  Serial.println(F("┌───────────────────────────────────────┐"));
+  Serial.println(F("│           F1 RACE SCHEDULE            │"));
+  Serial.printf(   "│  %-37s│\n", nowStr.c_str());
+  Serial.println(F("├───────────────────────────────────────┤"));
+  Serial.printf(   "│  Next Race: %-26s│\n", raceName);
+  Serial.println(F("├─────────────────────┬────────┬────────┤"));
+  Serial.println(F("│  SESSION            │  DAY   │  TIME  │"));
+  Serial.println(F("├─────────────────────┼────────┼────────┤"));
 
   for (JsonPair kv : races_sessions)
   {
-    printConvertedTime(sessionCodeToString(kv.key().c_str()),
-                       kv.value().as<const char *>());
+    const char *sessionName = sessionCodeToFullString(kv.key().c_str());
+    String dayStr  = getConvertedTime(kv.value().as<const char *>(), "D");
+    String timeStr = getConvertedTime(kv.value().as<const char *>(), "H:i");
+    Serial.printf("│  %-19s│  %-6s│  %-6s│\n",
+                  sessionName, dayStr.c_str(), timeStr.c_str());
   }
+
+  Serial.println(F("└─────────────────────┴────────┴────────┘"));
 }
 
 String createTelegramMessageString(const char *raceName, JsonObject races_sessions)
@@ -142,8 +176,7 @@ bool sendNotificationOfNextRace(UniversalTelegramBot *bot)
 
   if (error)
   {
-    Serial.print("deserializeJson() failed: ");
-    Serial.println(error.c_str());
+    DBG_ERROR("deserializeJson() failed: %s", error.c_str());
     racesJson.close();
     return false;
   }
@@ -153,32 +186,28 @@ bool sendNotificationOfNextRace(UniversalTelegramBot *bot)
 
   printRaceTimes(races_name, races_sessions);
 
-  Serial.print("Sending message to ");
-  Serial.println(rl_f1Config.chatId);
+  DBG_INFO("Sending message to %s", rl_f1Config.chatId.c_str());
   racesJson.close();
   return bot->sendPhoto(rl_f1Config.chatId, "https://i.imgur.com/q3qsfSi.png", createTelegramMessageString(races_name, races_sessions));
 }
 
 int fetchRaceJson(FileFetcher fileFetcher)
 {
-  // In this example I reuse the same filename
-  // over and over
   if (SPIFFS.exists(RACE_FILE_NAME) == true)
   {
-    Serial.println("Removing existing image");
+    DBG_VERBOSE("Removing existing races.json");
     SPIFFS.remove(RACE_FILE_NAME);
   }
 
   fs::File f = SPIFFS.open(RACE_FILE_NAME, "w+");
   if (!f)
   {
-    Serial.println("file open failed");
+    DBG_ERROR("Opening races.json file for write failed");
     return -1;
   }
 
   bool gotFile = fileFetcher.getFile(RACE_JSON_URL, &f);
 
-  // Make sure to close the file!
   f.close();
 
   return gotFile;
@@ -189,22 +218,26 @@ bool saveCurrentRaceToFile(const JsonObject &raceJson)
 
   if (raceJson.isNull())
   {
-    Serial.println("Race data is null, nothing to save");
+    DBG_WARN("Race data is null, nothing to save");
     return false;
   }
 
   File currentRaceFile = SPIFFS.open(CURRENT_RACE_FILE_NAME, "w");
   if (!currentRaceFile)
   {
-    Serial.println("failed to open config file for writing");
+    DBG_ERROR("Failed to open current race file for writing");
     return false;
   }
 
-  Serial.println("Saving Race Json");
-  serializeJsonPretty(raceJson, Serial);
+  DBG_INFO("Saving current race json");
+  if (debugLevel >= DBG_LEVEL_VERBOSE)
+  {
+    serializeJsonPretty(raceJson, Serial);
+    Serial.println();
+  }
   if (serializeJson(raceJson, currentRaceFile) == 0)
   {
-    Serial.println(F("Failed to write to file"));
+    DBG_ERROR("Failed to write current race file");
     return false;
   }
   currentRaceFile.close();
@@ -230,20 +263,17 @@ bool getNextRace(int &offset, bool &notificationSent, F1Display *f1Display, bool
 
   if (error)
   {
-    Serial.print("deserializeJson() failed: ");
-    Serial.println(error.c_str());
+    DBG_ERROR("deserializeJson() failed: %s", error.c_str());
+    racesJson.close();
     return false;
   }
   JsonArray races = doc["races"];
 
   int racesAmount = races.size();
   time_t timeNow = UTC.now();
-  Serial.println();
-  Serial.println("UTC:             " + UTC.dateTime());
+  DBG_VERBOSE("UTC: %s", UTC.dateTime().c_str());
   for (int i = 0; i < racesAmount; i++)
   {
-
-    // serializeJsonPretty(races[i], Serial);
 
     const char *races_name = races[i]["name"];
     JsonObject races_sessions = races[i]["sessions"];
@@ -267,26 +297,26 @@ bool getNextRace(int &offset, bool &notificationSent, F1Display *f1Display, bool
         {
           offset = roundNumber;
           notificationSent = false;
-          Serial.println("New Race");
+          DBG_INFO("Detected new race (round %d)", roundNumber);
           newRace = true;
         }
         else
         {
-          Serial.println("Got new race, but couldn't save JSON to file");
+          DBG_ERROR("Detected new race but failed to save json");
         }
       }
       else
       {
-        Serial.println("Same Race as before");
+        DBG_VERBOSE("Same race as before (round %d)", roundNumber);
         if (forceRaceFileSave)
         {
           if (saveCurrentRaceToFile(races[i]))
           {
-            Serial.println("(Forced Save) Saved race to file");
+            DBG_INFO("(Forced Save) Saved race to file");
           }
           else
           {
-            Serial.println("(Forced Save) Couldn't save JSON to file");
+            DBG_ERROR("(Forced Save) Failed to save race file");
           }
         }
       }

@@ -1,3 +1,8 @@
+// ----------------------------
+// matrixDisplay.h
+// HUB75 LED matrix (ESP32 Trinity) concrete display implementation.
+// ----------------------------
+
 #include "display.h"
 
 #include "util.h"
@@ -16,9 +21,9 @@
 // Can be installed from the library manager
 // https://github.com/adafruit/Adafruit-GFX-Library
 
-// -------------------------------------
-// -------   Matrix Config   ------
-// -------------------------------------
+// ----------------------------
+// Matrix panel configuration
+// ----------------------------
 
 const int panelResX = 64;  // Number of pixels wide of each INDIVIDUAL panel module.
 const int panelResY = 64;  // Number of pixels tall of each INDIVIDUAL panel module.
@@ -26,11 +31,12 @@ const int panel_chain = 1; // Total number of panels chained one to another
 
 MatrixPanel_I2S_DMA *dma_display = nullptr;
 
-uint16_t myBLACK = dma_display->color565(0, 0, 0);
-uint16_t myWHITE = dma_display->color565(255, 255, 255);
-uint16_t myRED = dma_display->color565(255, 0, 0);
-uint16_t myGREEN = dma_display->color565(0, 255, 0);
-uint16_t myBLUE = dma_display->color565(0, 0, 255);
+// RGB565 constants — computed directly, no display instance needed
+constexpr uint16_t myBLACK = 0x0000;
+constexpr uint16_t myWHITE = 0xFFFF;
+constexpr uint16_t myRED   = 0xF800;
+constexpr uint16_t myGREEN = 0x07E0;
+constexpr uint16_t myBLUE  = 0x001F;
 
 class MatrixDisplay : public F1Display
 {
@@ -38,7 +44,7 @@ public:
   void displaySetup()
   {
 
-    Serial.println("matrix display setup");
+    DBG_INFO("Matrix display setup");
     setWidth(panelResX * panel_chain);
     setHeight(panelResY);
 
@@ -78,8 +84,7 @@ public:
     int16_t xOne, yOne;
     uint16_t w, h;
 
-    // This method updates the variables with what width (w) and height (h)
-    // the give text will have.
+
 
     dma_display->getTextBounds(raceNameChanged, 0, 0, &xOne, &yOne, &w, &h);
 
@@ -111,16 +116,14 @@ public:
     int16_t xOne, yOne;
     uint16_t w, h;
 
-    // This method updates the variables with what width (w) and height (h)
-    // the give text will have.
+
     dma_display->getTextBounds("Next Race:", 0, 0, &xOne, &yOne, &w, &h);
     int xPosition = screenCenterX - w / 2;
     dma_display->setTextColor(myGREEN);
     dma_display->setCursor(xPosition, 2);
     dma_display->print("Next Race:");
 
-    // This method updates the variables with what width (w) and height (h)
-    // the give text will have.
+
 
     dma_display->getTextBounds(raceNameChanged, 0, 0, &xOne, &yOne, &w, &h);
 
@@ -141,7 +144,7 @@ public:
 
   void drawWifiManagerMessage(WiFiManager *myWiFiManager)
   {
-    Serial.println("Entered Conf Mode");
+    DBG_WARN("Display entered config mode");
     dma_display->fillScreen(myBLACK);
     dma_display->setTextSize(1); // size 1 == 8 pixels high
     dma_display->setTextWrap(false);
@@ -198,21 +201,19 @@ private:
     dma_display->setCursor(1, y);
     dma_display->print(sessionName);
 
-    Serial.println(sessionName);
+    DBG_VERBOSE("Matrix session label: %s", sessionName);
 
     // Print time on the right
 
     int16_t xOne, yOne;
     uint16_t w, h;
 
-    // This method updates the variables with what width (w) and height (h)
-    // the give text will have.
-    Serial.println(sessionStartTime);
+
     dma_display->getTextBounds(sessionStartTime, 0, 0, &xOne, &yOne, &w, &h);
 
     int xPosition = screenWidth - w;
 
-    Serial.println(xPosition);
+    DBG_VERBOSE("Matrix session time '%s' xPosition=%d", sessionStartTime.c_str(), xPosition);
 
     dma_display->setCursor(xPosition, y);
     dma_display->print(sessionStartTime);

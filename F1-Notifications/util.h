@@ -1,3 +1,7 @@
+// ----------------------------
+// util.h
+// Utility functions — race name abbreviations for display output.
+// ----------------------------
 
 const char *convertRaceName(const char *raceName)
 {

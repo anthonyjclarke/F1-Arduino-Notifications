@@ -1,3 +1,8 @@
+// ----------------------------
+// cheapYellowLCD.h
+// CYD (ILI9341 / TFT_eSPI) concrete display implementation.
+// ----------------------------
+
 #include "display.h"
 #include "getImage.h"
 #include "util.h"
@@ -14,11 +19,9 @@
 // Can be installed from the library manager (Search for "PNGdec")
 // https://github.com/bitbank2/PNGdec
 
-// -------------------------------
-// Putting this stuff outside the class because
-// I can't easily pass member functions in as callbacks for pngdec
-
-// -------------------------------
+// ----------------------------
+// PNGdec callbacks — must be free functions, not class members
+// ----------------------------
 
 #define SESSION_TEXT_SIZE 4
 
@@ -51,12 +54,13 @@ int32_t mySeek(PNGFILE *handle, int32_t position)
   return myfile.seek(position);
 }
 
-void PNGDraw(PNGDRAW *pDraw)
+int PNGDraw(PNGDRAW *pDraw)
 {
   uint16_t usPixels[320];
 
   png.getLineAsRGB565(pDraw, usPixels, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
   tft.pushImage(0, pDraw->y, pDraw->iWidth, 1, usPixels);
+  return 1;
 }
 
 class CheapYellowDisplay : public F1Display
@@ -65,7 +69,7 @@ public:
   void displaySetup()
   {
 
-    Serial.println("cyd display setup");
+    DBG_INFO("CYD display setup");
     setWidth(320);
     setHeight(240);
 
@@ -104,12 +108,12 @@ public:
     }
 
     // if we reach here, the screen doesn't need to be updated
-    Serial.println("No need to update display");
+    DBG_VERBOSE("No display update needed");
   }
 
   void displayRaceWeek(const char *raceName, JsonObject races_sessions)
   {
-    Serial.println("prts");
+    DBG_INFO("Rendering race week display for %s", raceName);
     tft.fillRect(0, 0, screenWidth, screenHeight, TFT_BLACK);
 
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -136,30 +140,28 @@ public:
     tft.fillScreen(TFT_BLACK);
     unsigned long lTime = millis();
     lTime = millis();
-    Serial.println(imageFileUri);
+    DBG_VERBOSE("Displaying image: %s", imageFileUri);
 
     int rc = png.open((const char *)imageFileUri, myOpen, myClose, myRead, mySeek, PNGDraw);
     if (rc == PNG_SUCCESS)
     {
-      Serial.printf("image specs: (%d x %d), %d bpp, pixel type: %d\n", png.getWidth(), png.getHeight(), png.getBpp(), png.getPixelType());
+      DBG_VERBOSE("Image specs: (%d x %d), %d bpp, pixel type: %d", png.getWidth(), png.getHeight(), png.getBpp(), png.getPixelType());
       rc = png.decode(NULL, 0);
       png.close();
     }
     else
     {
-      Serial.print("error code: ");
-      Serial.println(rc);
+      DBG_ERROR("PNG open failed with error code: %d", rc);
     }
 
-    Serial.print("Time taken to decode and display Image (ms): ");
-    Serial.println(millis() - lTime);
+    DBG_VERBOSE("Image decode/display time (ms): %lu", millis() - lTime);
 
     return rc;
   }
 
   void drawWifiManagerMessage(WiFiManager *myWiFiManager)
   {
-    Serial.println("Entered Conf Mode");
+    DBG_WARN("Display entered config mode");
     tft.fillScreen(TFT_BLACK);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.drawCentreString("Entered Conf Mode:", screenCenterX, 5, 2);

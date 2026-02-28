@@ -1,3 +1,8 @@
+// ----------------------------
+// config.h
+// F1Config class — reads and writes /f1_notification_config.json on SPIFFS.
+// ----------------------------
+
 #define F1_CONFIG_JSON "/f1_notification_config.json"
 
 #define F1_TIME_ZONE_LABEL "timeZone"
@@ -35,18 +40,21 @@ public:
   {
     if (SPIFFS.exists(F1_CONFIG_JSON))
     {
-      // file exists, reading and loading
-      Serial.println("reading config file");
+      DBG_INFO("Reading config file");
       File configFile = SPIFFS.open(F1_CONFIG_JSON, "r");
       if (configFile)
       {
-        Serial.println("opened config file");
+        DBG_VERBOSE("Opened config file");
         StaticJsonDocument<1024> json;
         DeserializationError error = deserializeJson(json, configFile);
-        serializeJsonPretty(json, Serial);
+        if (debugLevel >= DBG_LEVEL_VERBOSE)
+        {
+          serializeJsonPretty(json, Serial);
+          Serial.println();
+        }
         if (!error)
         {
-          Serial.println("\nparsed json");
+          DBG_INFO("Parsed config json");
 
           if (json.containsKey(F1_TIME_ZONE_LABEL))
           {
@@ -82,19 +90,19 @@ public:
         }
         else
         {
-          Serial.println("failed to load json config");
+          DBG_ERROR("Failed to parse config json");
           return false;
         }
       }
     }
 
-    Serial.println("Config file does not exist");
+    DBG_WARN("Config file does not exist");
     return false;
   }
 
   bool saveConfigFile()
   {
-    Serial.println(F("Saving config"));
+    DBG_INFO("Saving config");
     StaticJsonDocument<1024> json;
     json[F1_TIME_ZONE_LABEL] = timeZone;
     json[F1_TIME_FORMAT_LABEL] = timeFormat;
@@ -106,14 +114,18 @@ public:
     File configFile = SPIFFS.open(F1_CONFIG_JSON, "w");
     if (!configFile)
     {
-      Serial.println("failed to open config file for writing");
+      DBG_ERROR("Failed to open config file for writing");
       return false;
     }
 
-    serializeJsonPretty(json, Serial);
+    if (debugLevel >= DBG_LEVEL_VERBOSE)
+    {
+      serializeJsonPretty(json, Serial);
+      Serial.println();
+    }
     if (serializeJson(json, configFile) == 0)
     {
-      Serial.println(F("Failed to write to file"));
+      DBG_ERROR("Failed to write config file");
       return false;
     }
     configFile.close();
