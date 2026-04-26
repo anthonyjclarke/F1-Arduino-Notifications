@@ -3,6 +3,7 @@
 // HUB75 LED matrix (ESP32 Trinity) concrete display implementation.
 // ----------------------------
 
+#include "debug.h"
 #include "display.h"
 
 #include "util.h"

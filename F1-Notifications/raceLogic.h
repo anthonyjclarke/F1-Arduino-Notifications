@@ -6,6 +6,8 @@
 #ifndef RACELOGIC_H
 #define RACELOGIC_H
 
+#include "debug.h"
+
 #define RACE_FILE_NAME "/races.json"
 #define CURRENT_RACE_FILE_NAME "/current_races.json"
 
@@ -120,11 +122,15 @@ void printRaceTimes(const char *raceName, JsonObject races_sessions)
   // Box: 41 chars wide (39 inner)
   // Columns (inner widths): Session=21, Day=8, Time=8
   // "Sprint Qualifying" (17 chars) is the longest session name: 2+17+2 = 21 col ✓
-  String nowStr = myTZ.dateTime("Y-m-d D H:i");
+  String raceDateStr = getConvertedTime(races_sessions["gp"], F1_RACE_DATE_FORMAT);
+
+  int dateLen   = raceDateStr.length();
+  int leftPad   = (39 - dateLen) / 2;
+  int rightPad  = 39 - dateLen - leftPad;
 
   Serial.println(F("┌───────────────────────────────────────┐"));
   Serial.println(F("│           F1 RACE SCHEDULE            │"));
-  Serial.printf(   "│  %-37s│\n", nowStr.c_str());
+  Serial.printf(   "│%*s%s%*s│\n", leftPad, "", raceDateStr.c_str(), rightPad, "");
   Serial.println(F("├───────────────────────────────────────┤"));
   Serial.printf(   "│  Next Race: %-26s│\n", raceName);
   Serial.println(F("├─────────────────────┬────────┬────────┤"));

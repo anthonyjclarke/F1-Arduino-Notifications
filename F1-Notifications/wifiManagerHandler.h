@@ -4,6 +4,8 @@
 // WiFiManager captive portal setup with DoubleResetDetector integration.
 // ----------------------------
 
+#include "debug.h"
+
 // Number of seconds after reset during which a
 // subsequent reset will be considered a double reset.
 #define DRD_TIMEOUT 10
@@ -15,7 +17,7 @@
 #define WM_F1_TIME_FORMAT_LABEL "timeFormat"
 #define WM_F1_BOT_TOKEN_LABEL "botToken"
 #define WM_F1_CHAT_ID_LABEL "chatId"
-#define WM_F1_NOTIFCATION_LABEL "notification"
+#define WM_F1_NOTIFICATION_LABEL "notification"
 
 DoubleResetDetector* drd;
 F1Display* wm_Display;
@@ -56,7 +58,7 @@ void setupWiFiManager(bool forceConfig, F1Config f1Config, F1Display* theDisplay
   } else {
     customHtml = checkBox;
   }
-  WiFiManagerParameter isNotificationSent(WM_F1_NOTIFCATION_LABEL, "Notification Sent", "T", 2, customHtml);
+  WiFiManagerParameter isNotificationSent(WM_F1_NOTIFICATION_LABEL, "Notification Sent", "T", 2, customHtml);
 
   wm.addParameter(&timeZoneParam);
   wm.addParameter(&timeFormatParam);

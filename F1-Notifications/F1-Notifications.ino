@@ -52,68 +52,15 @@
 
 #define ESP_DRD_USE_SPIFFS true
 
-// =========================
-// Debug System
-// =========================
-/**
- * Leveled debug logging system with runtime control
- *
- * DEBUG LEVELS:
- *   0 = Off      - No debug output
- *   1 = Error    - Critical errors only
- *   2 = Warn     - Warnings + Errors
- *   3 = Info     - General info + Warnings + Errors (default)
- *   4 = Verbose  - All debug output including frequent events
- *
- * USAGE:
- *   DBG_ERROR(...)   - Critical errors (level 1+)
- *   DBG_WARN(...)    - Warnings (level 2+)
- *   DBG_INFO(...)    - General information (level 3+)
- *   DBG_VERBOSE(...) - Verbose/frequent output (level 4)
- *
- * RUNTIME CONTROL:
- *   Set debugLevel variable (0-4) to change verbosity at runtime
- *   Can be controlled via web API
- */
-#ifndef DEBUG_LEVEL
-#define DEBUG_LEVEL 3 // Default: Info level
-#endif
-
-#define DBG_LEVEL_OFF 0
-#define DBG_LEVEL_ERROR 1
-#define DBG_LEVEL_WARN 2
-#define DBG_LEVEL_INFO 3
-#define DBG_LEVEL_VERBOSE 4
-
-// Runtime debug level control (can be changed via web API)
-static uint8_t debugLevel = DEBUG_LEVEL;
-
-void debugLogf(uint8_t level, const char *label, const char *fmt, ...)
-{
-  if (debugLevel < level)
-  {
-    return;
-  }
-
-  char logMessage[256];
-  va_list args;
-  va_start(args, fmt);
-  vsnprintf(logMessage, sizeof(logMessage), fmt, args);
-  va_end(args);
-
-  Serial.printf("[%s] %s\n", label, logMessage);
-}
-
-#define DBG_ERROR(...) debugLogf(DBG_LEVEL_ERROR, "ERROR", __VA_ARGS__)
-#define DBG_WARN(...) debugLogf(DBG_LEVEL_WARN, "WARN", __VA_ARGS__)
-#define DBG_INFO(...) debugLogf(DBG_LEVEL_INFO, "INFO", __VA_ARGS__)
-#define DBG_VERBOSE(...) debugLogf(DBG_LEVEL_VERBOSE, "VERBOSE", __VA_ARGS__)
+// ----------------------------
+// Debug system — levels, macros, runtime control
+// ----------------------------
+#include "debug.h"
 
 // ----------------------------
 // Standard Libraries
 // ----------------------------
 
-#include <stdarg.h>
 #include <WiFi.h>
 
 #include <WiFiClientSecure.h>
@@ -176,6 +123,9 @@ void debugLogf(uint8_t level, const char *label, const char *fmt, ...)
 
 #include "wifiManagerHandler.h"
 
+#include "f1_logo.h"
+
+
 WiFiClientSecure secured_client;
 
 FileFetcher fileFetcher(secured_client);
@@ -216,15 +166,10 @@ void setup()
 
   bool forceConfig = false;
 
-  drd = new DoubleResetDetector(DRD_TIMEOUT, DRD_ADDRESS);
-  if (drd->detectDoubleReset())
-  {
-    DBG_WARN("Forcing config mode due to double reset");
-    forceConfig = true;
-  }
-
-  // Try mounting without format first to preserve persisted data.
-  // Falls back to formatting on first boot or after corruption.
+  // Mount SPIFFS before DRD — ESP_DRD_USE_SPIFFS requires SPIFFS to be
+  // mounted first or DRD's SPIFFS access fails and leaves SPIFFS in an
+  // inconsistent state, causing SPIFFS.begin(true) to reformat on every boot
+  // and wipe the saved config file.
   bool spiffsInitSuccess = SPIFFS.begin(false) || SPIFFS.begin(true);
   if (!spiffsInitSuccess)
   {
@@ -233,6 +178,13 @@ void setup()
       yield();
   }
   DBG_INFO("SPIFFS initialization done");
+
+  drd = new DoubleResetDetector(DRD_TIMEOUT, DRD_ADDRESS);
+  if (drd->detectDoubleReset())
+  {
+    DBG_WARN("Forcing config mode due to double reset");
+    forceConfig = true;
+  }
 
   if (!f1Config.fetchConfigFile())
   {
@@ -280,7 +232,7 @@ void setup()
   // sendNotificationOfNextRace(&bot, f1Config.roundOffset);
 }
 
-bool notificaitonEventRaised = false;
+bool notificationEventRaised = false;
 
 void sendNotification()
 {
@@ -298,7 +250,7 @@ void sendNotification()
     }
     else
     {
-      notificaitonEventRaised = false;
+      notificationEventRaised = false;
       DBG_INFO("Notification sent successfully");
       f1Config.saveConfigFile();
     }
@@ -308,7 +260,7 @@ void sendNotification()
 
     DBG_WARN("Notification skipped, Telegram is not configured");
 
-    notificaitonEventRaised = false;
+    notificationEventRaised = false;
     f1Config.currentRaceNotification = true;
     f1Config.saveConfigFile();
   }
@@ -343,15 +295,16 @@ void loop()
     {
       f1Config.saveConfigFile();
     }
-    if (!f1Config.currentRaceNotification && !notificaitonEventRaised)
+    if (!f1Config.currentRaceNotification && !notificationEventRaised)
     {
       // we have never notified about this race yet, so we'll raise an event
       setEvent(sendNotification, getNotifyTime());
-      notificaitonEventRaised = true;
+      notificationEventRaised = true;
       DBG_INFO("Notification event raised for: %s", myTZ.dateTime(getNotifyTime(), UTC_TIME, f1Config.timeFormat).c_str());
     }
     first = false;
   }
 
   events();
+  f1Display->tickDisplay();
 }

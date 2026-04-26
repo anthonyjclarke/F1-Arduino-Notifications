@@ -3,6 +3,7 @@
 // Downloads circuit track images from Imgur and caches them to SPIFFS.
 // ----------------------------
 
+#include "debug.h"
 #include <FileFetcher.h>
 
 // Root CA for i.imgur.com (USERTrust RSA Certification Authority)
@@ -172,8 +173,14 @@ int getImage(const char *raceName)
   secured_client.setCACert(IMGUR_CERTIFICATE_ROOT);
   DBG_INFO("Downloading track image for race: %s", raceName);
   bool gotImage = fileFetcher.getFile((char *)imageUrl, &f);
-
   f.close();
+
+  // Re-open to get the committed file size — f.size() before close can report
+  // the SPIFFS block-allocated size (multiple of 4096), not actual bytes written.
+  fs::File verify = SPIFFS.open(TRACK_IMAGE);
+  int actualSize = verify ? (int)verify.size() : -1;
+  verify.close();
+  DBG_INFO("Track image download %s — SPIFFS file size: %d bytes", gotImage ? "OK" : "FAILED", actualSize);
 
   return gotImage;
 }

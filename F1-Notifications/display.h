@@ -23,6 +23,10 @@ class F1Display {
     virtual void displayRaceWeek(const char* raceName, JsonObject races_sessions) = 0;
     virtual void drawWifiManagerMessage(WiFiManager *myWiFiManager) = 0;
 
+    // Called each loop() iteration — handles timed slide alternation.
+    // Default no-op; override in display implementations that support it.
+    virtual void tickDisplay() {}
+
     F1DisplaySate state;
 
     void setRaceName(const char* raceName){

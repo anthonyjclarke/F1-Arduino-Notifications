@@ -1,5 +1,21 @@
 # F1-Arduino-Notifications
 
+> **This is a personal fork** by [Anthony Clarke](https://github.com/anthonyjclarke).
+> Original project by [Brian Lough (witnessmenow)](https://github.com/witnessmenow/arduino-f1-notifications) — all credit for the original concept, hardware design, and core implementation goes to Brian.
+>
+> **Changes in this fork** (from v2.2.0 / 2026-02-28 onward — see [CHANGELOG](CHANGELOG.md)):
+> - Polymorphic display abstraction (`F1Display` base class) with CYD ILI9341 and HUB75 64×64 LED matrix backends
+> - WiFiManager captive portal for timezone and Telegram configuration, persisted to SPIFFS as JSON
+> - Double-reset-to-config-portal (ESP_DoubleResetDetector)
+> - Alternating slide display: circuit track image ↔ session timetable (CYD only)
+> - `debug.h` leveled debug logging system (`DBG_ERROR` / `DBG_WARN` / `DBG_INFO` / `DBG_VERBOSE`)
+> - `secrets.h` credential separation (gitignored)
+> - Fixed SPIFFS/DRD initialisation order (WiFi portal no longer forced on every reboot)
+> - Fixed PNG rendering byte order for TFT_eSPI
+> - 2026 F1 season calendar support
+
+---
+
 An ESP32 project to display and notify of when F1 races are and what time the sessions start at in your local timezone.
 
 ![image](https://github.com/witnessmenow/F1-Arduino-Notifications/assets/1562562/ddc0c493-4931-4c45-a793-b55f95eb355a)

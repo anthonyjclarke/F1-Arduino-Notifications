@@ -3,7 +3,19 @@
 // F1Config class — reads and writes /f1_notification_config.json on SPIFFS.
 // ----------------------------
 
+#pragma once
+
+#include "debug.h"
+#include "secrets.h"
+
 #define F1_CONFIG_JSON "/f1_notification_config.json"
+
+// Uncomment to force dev defaults from secrets.h, overriding any values saved in SPIFFS config.
+// Must be commented out for production flashing.
+#define F1_FORCE_DEV_DEFAULTS
+
+// Format for the race date header in the serial schedule table (ezTime format string)
+#define F1_RACE_DATE_FORMAT "l, d M Y - H:i"
 
 #define F1_TIME_ZONE_LABEL "timeZone"
 #define F1_TIME_FORMAT_LABEL "timeFormat"
@@ -17,15 +29,15 @@ class F1Config
 public:
   // How the time will be displayed, see here for more info: https://github.com/ropg/ezTime#datetime
   String timeFormat = "D, H:i";      // Fri, 00:30
-  String timeZone = "Europe/London"; // seems to be something wrong with Europe/Dublin
+  String timeZone = SECRET_TIME_ZONE;
 
   // Telegram BOT Token (Get from Botfather)
-  String botToken = "";
+  String botToken = SECRET_BOT_TOKEN;
 
   // Use @myidbot (IDBot) to find out the chat ID of an individual or a group
   // Also note that you need to click "start" on a bot before it can
   // message you
-  String chatId = "";
+  String chatId = SECRET_CHAT_ID;
 
   int roundOffset = 0;
 
@@ -86,6 +98,14 @@ public:
             currentRaceNotification = json[F1_CURRENT_RACE_NOTIFICATION_LABEL].as<bool>();
           }
 
+#ifdef F1_FORCE_DEV_DEFAULTS
+          timeZone = SECRET_TIME_ZONE;
+          botToken = SECRET_BOT_TOKEN;
+          chatId   = SECRET_CHAT_ID;
+          DBG_WARN("Dev defaults forced — SPIFFS timezone/credentials overridden");
+#endif
+
+          DBG_INFO("Timezone: %s", timeZone.c_str());
           return true;
         }
         else
